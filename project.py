@@ -8,6 +8,7 @@ from database_setup import Base, Restaurant, MenuItem
 from flask import session as login_session
 import random, string
 
+from oauth2client import client
 from oauth2client.client import flow_from_clientsecrets
 from oauth2client.client import FlowExchangeError
 import httplib2
@@ -41,31 +42,97 @@ def gconnect():
         return response
     code = request.data
     try:
-        oauth_flow = flow_from_clientsecrets('client_secrets.json',
-            scope='')
-        oauth_flow.redirect_uri = 'postmessage'
-        # Exchange one time one time secret from client to get access code fpr servver
-        credentials = oauth_flow.step2_exchange(code)
+        # oauth_flow = flow_from_clientsecrets('client_secret.json',
+        #     scope='')
+        # oauth_flow.redirect_uri = 'postmessage'
+        # # Exchange one time one time secret from client to get access code fpr servver
+        # credentials = oauth_flow.step2_exchange(code)
+        credentials = client.credentials_from_clientsecrets_and_code(
+        'client_secret.json',
+        ['https://www.googleapis.com/auth/drive.appdata', 'profile', 'email'],
+        code)
     except FlowExchangeError:
         response = make_response(json.dumps('Failed to upgrade the authorization code'),
             401)
         response.headers['Content-Type'] = 'application/json'
         return response
     # Check that access token is valid
-    access_token = credentials.access_token
-    url = ('https://www.googleapis.com/oauth2/v1/tokeninfo?accesstoken=%s'
-        % access_token)
-    h = httplib2.Http()
-    result = json.loads(h,request(url,'GET')[1])
-    # If there was an error in the access token info, abort.
-    if result.get('error') is not None:
-        response = make_response(json.dumps(result.get('error')), 500)
-        response.headers['Content-Type'] = 'application/json'
+    # access_token = credentials.access_token
+    # url = ('https://www.googleapis.com/oauth2/v1/tokeninfo?accesstoken=%s'
+    #     % access_token)
+    # h = httplib2.Http()
+    # rb = h.request(url,'GET')[1].decode('latin1')
+    # result = json.loads(rb)
+    # # If there was an error in the access token info, abort.
+    # if result.get('error') is not None:
+    #     response = make_response(json.dumps(result.get('error')), 500)
+    #     response.headers['Content-Type'] = 'application/json'
+    http_auth = credentials.authorize(httplib2.Http())
     # Verify tht the access token is ised fpr yje intended client
     gplus_id = credentials.id_token['sub']
-    if result['user_id'] != gplus_id:
+    # if result['user_id'] != gplus_id:
+    #     response = make_response(
+    #         json.dumps("Token's user ID doesnt match given USER ID"), 401
+    #     )
+    #     response.headers['Content-Type'] = 'application/json'
+    #     return response
+    # Check to see if user is already logged in
+    stored_credentials = login_session.get('credentials')
+    stored_gplus_id = login_session.get('gplus_id')
+    if (stored_credentials is not None 
+        and gplus_id == stored_gplus_id):
+        response = make_response(json.dumps('Current user is already connected.'),
+                        200)
+        response.headers['Content-Type'] = 'application/json'
+
+    # Store the access toen in the session for later use
+    login_session['credentials'] = credentials.access_token
+    login_session['gplus_id'] = gplus_id
+
+    # Get User info
+    userinfo_url = 'https://www.googleapis.com/oauth2/v1/userinfo'
+    params = {"access_token": credentials.access_token, 'alt':'json'}
+    answer = requests.get(userinfo_url, params=params)
+    data = json.loads(answer.text)
+    login_session['username'] = data['name']
+    login_session['picture'] = data['picture']
+    login_session['email'] = data['email']
+    output = """
+    <h1> Welcome, %(username)s</h1>
+    <img src="%(picture)s" style="width:300px; height:300px; border-radius:150px">
+    """ % {"username": login_session['username'], "picture": login_session['picture']}
+    flash("You are now logged in as %s" % login_session["username"])
+    return str(output)
+
+@app.route('/gdisconnect')
+def gdisconnect():
+    # Only disconnect a connected user.
+    credentials = login_session.get('credentials')
+    if credentials is None:
+        response = make_response(json.dumps('Current user not connected.'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    # Execute HTTP GET request to revoke current token.
+    access_token = credentials
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % access_token
+    h = httplib2.Http()
+    result = h.request(url, 'GET')[0]
+
+    if result['status'] == '200':
+        # Reset the user's session.
+        del login_session['credentials']
+        del login_session['gplus_id']
+        del login_session['username']
+        del login_session['email']
+        del login_session['picture']
+
+        response = make_response(json.dumps('Successfully disconnected.'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    else:
+        # For whatever reason, the given token was invalid.
         response = make_response(
-            json.dumps("Token's user ID doesnt match given USER ID"), 401
+            json.dumps('Failed to revoke for given user.', 400)
         )
         response.headers['Content-Type'] = 'application/json'
         return response
@@ -99,6 +166,8 @@ def showRestaurants():
 #Create a new restaurant
 @app.route('/restaurant/new/', methods=['GET','POST'])
 def newRestaurant():
+  if 'username' not in login_session:
+      return redirect('/login')
   if request.method == 'POST':
       newRestaurant = Restaurant(name = request.form['name'])
       session.add(newRestaurant)

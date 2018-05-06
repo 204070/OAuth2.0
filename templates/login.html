@@ -6,16 +6,39 @@
     <script src="https://apis.google.com/js/client:platform.js?onload=start" async defer>
     </script>
 
+    <script>
+        function start() {
+            gapi.load('auth2', function() {
+            auth2 = gapi.auth2.init({
+                client_id: '321579447818-c1phob1croijb20cp71mgnocbeuloftt.apps.googleusercontent.com',
+                // Scopes to request in addition to 'profile' and 'email'
+                //scope: 'additional_scope'
+                scope: "openid email"   ,
+                redirecturi: 'postmessage',
+                accesstype: 'offline',
+                cookiepolicy: 'single_host_origin',
+                approvalprompt: 'force'
+            });
+            });
+        }
+    </script>
 </head>
 
 <body>
-    <div id="signinButton">
+    <!--<div id="signinButton">
         <span class="g-signin" data-scope="openid email" 
 data-clientid="321579447818-c1phob1croijb20cp71mgnocbeuloftt"
 data-redirecturi="postmessage" data-accesstype="offline" 
 data-cookiepolicy="single_host_origin" data-callback="signInCallback" data-approvalprompt="force">
         </span>
-    </div>
+    </div>-->
+    <button id="signinButton">Sign in with Google</button>
+    <script>
+    $('#signinButton').click(function() {
+        // signInCallback defined in step 6.
+        auth2.grantOfflineAccess().then(signInCallback);
+    });
+    </script>
     <div id="result"></div>
 
     <script>
