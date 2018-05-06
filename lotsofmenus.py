@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
  
 from database_setup import Restaurant, Base, MenuItem
  
-engine = create_engine('sqlite:///restaurantmenu.db')
+engine = create_engine('sqlite:///restaurantmenuwithusers.db')
 # Bind the engine to the metadata of the Base class so that the
 # declaratives can be accessed through a DBSession instance
 Base.metadata.bind = engine
@@ -292,5 +292,5 @@ menuItem2 = MenuItem(name = "Cachapa", description = "Golden brown, corn-based v
 session.add(menuItem2)
 session.commit()
 
-print "added menu items!"
+print ("added menu items!")
 
